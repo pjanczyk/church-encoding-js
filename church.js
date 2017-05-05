@@ -6,11 +6,16 @@ const TRUE = x => y => x;
 const FALSE = x => y => y;
 
 // church boolean -> JS boolean
-const toBoolean = p =>
-    p(true)(false);
+function decodeChurchBoolean(p) {
+    return p(true)(false);
+}
+// JS boolean -> church boolean
+function makeChurchBoolean(b) {
+    return b ? TRUE : FALSE;
+}
 
 /*******************
- * NUMERALS        *
+ * CHURCH NUMERALS *
  *******************/
 
 const ZERO = f => x => x;
@@ -19,8 +24,14 @@ const TWO = f => x => f(f(x));
 const THREE = f => x => f(f(f(x)));
 
 // church numeral -> JS number
-const toInteger = num =>
-    num(x => x + 1)(0);
+function decodeChurchNumeral(num) {
+    return num(x => x + 1)(0);
+}
+// JS number -> church numeral
+function makeChurchNumeral(n) {
+    if (n <= 0) return ZERO;
+    else return SUCC(makeChurchNumeral(n - 1));
+}
 
 /*********************
  * LOGICAL OPERATORS *
@@ -132,8 +143,124 @@ const MOD = Z_COMBINATOR(self =>
         )
 );
 
+/***************
+ * LISTS       *
+ ***************/
 
-const IS_PRIME_REC = Z_COMBINATOR(self =>
+// List node (implemented as a triple)
+const _LIST_NODE = is_nil => head => tail =>
+    f => f(is_nil)(head)(tail);
+
+const IS_NIL = list =>
+    list(
+        is_nil => head => tail =>
+            is_nil
+    );
+
+const HEAD = list =>
+    list(
+        is_nil => head => tail =>
+            head
+    );
+
+const TAIL = list =>
+    list(
+        is_nil => head => tail =>
+            tail
+    );
+
+const CONS = value => list =>
+    _LIST_NODE(FALSE)(value)(list);
+
+const NIL = _LIST_NODE(TRUE)(_ => _)(_ => _);
+
+// church list -> JS array
+function decodeChurchList(list) {
+    let array = [];
+
+    while (!decodeChurchBoolean(IS_NIL(list))) {
+        array.push(HEAD(list));
+        list = TAIL(list);
+    }
+    return array;
+}
+// JS array -> churchList
+function makeChurchList(array) {
+    let list = NIL;
+    for (let el of array) {
+        list = CONS(el)(list);
+    }
+    return list;
+}
+
+/******************
+ * LIST FUNCTIONS *
+ ******************/
+
+const FOLDL = Z_COMBINATOR(self =>
+    init => list => f =>
+        /*if*/IS_NIL(list)
+        /*then*/(init)
+        /*else*/(
+            _ => ( // defer evaluation
+                self( f(init)(HEAD(list)) )( TAIL(list) )(f)
+            )(_)
+        )
+);
+
+const FOLDR = Z_COMBINATOR(self =>
+    init => list => f =>
+        /*if*/IS_NIL(list)
+        /*then*/(init)
+        /*else*/(
+            _ => ( // defer evaluation
+                f( HEAD(list) )( self(init)(TAIL(list))(f) )
+            )(_)
+        )
+);
+
+const MAP = list => f =>
+    FOLDR(NIL)(list)( l => r => CONS(f(l))(r) );
+
+const FILTER = list => f =>
+    FOLDR(NIL)(list)( l => r =>
+        /*if*/f(l)
+        /*then*/( CONS(l)(r) )
+        /*else*/(r)
+    );
+
+const RANGE = Z_COMBINATOR(self =>
+    start => end =>
+        /*if*/LE(start)(end)
+        /*then*/(
+            _ => ( // defer evaluation
+                CONS(start)( self(SUCC(start))(end) )
+            )(_)
+        )
+        /*else*/(NIL)
+);
+
+
+/*******************
+ * DEMO ALGORITHMS *
+ *******************/
+
+// Fibonacci numbers
+const FIB = Z_COMBINATOR(self =>
+    n =>
+        /*if*/LE(n)(ONE)
+    /*then*/(
+        n // FIB(0) == 0, FIB(1) == 1
+    )
+    /*else*/(
+        _ => ( // defer evaluation
+            ADD( self(PRED(n)) )( self(PRED(PRED(n))) ) // FIB(n-1) + FIB(n-2)
+        )(_)
+    )
+);
+
+
+const _IS_PRIME_REC = Z_COMBINATOR(self =>
     n => d =>
         /*if*/LE(d)(ONE) // d <= 1
         /*then*/(
@@ -152,15 +279,14 @@ const IS_PRIME_REC = Z_COMBINATOR(self =>
         )
 );
 
-
-const IS_PRIME = num =>
-    /*if*/LE(num)(ONE) // num <= 1
+// Primality test
+const IS_PRIME = n =>
+    /*if*/LE(n)(ONE) // n <= 1
     /*then*/(
         FALSE
     )
     /*else*/(
         _ => ( // defer evaluation
-            IS_PRIME_REC(num)(PRED(num)) // IS_PRIME_REC(num, num - 1)
+            _IS_PRIME_REC(n)(PRED(n)) // IS_PRIME_REC(n, n - 1)
         )(_)
     );
-
